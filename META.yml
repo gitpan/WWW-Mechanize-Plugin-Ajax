@@ -1,0 +1,25 @@
+# http://module-build.sourceforge.net/META-spec.html
+#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
+name:         WWW-Mechanize-Plugin-Ajax
+version:      0.01
+version_from: lib/WWW/Mechanize/Plugin/Ajax.pm
+installdirs:  site
+requires:
+    constant:                      1.03
+    constant::lexical:             0
+    HTML::DOM::Interface:          0
+    HTTP::Headers:                 0
+    HTTP::Headers::Util:           0
+    HTTP::Request:                 0
+    HTTP::Response:                0
+    lib:                           0
+    Scalar::Util:                  0
+    strict:                        0
+    Test::More:                    0
+    utf8:                          0
+    warnings:                      0
+    WWW::Mechanize::Plugin::JavaScript: 0.003
+    XML::DOM::Lite:                0
+
+distribution_type: module
+generated_by: ExtUtils::MakeMaker version 6.30

@@ -1,0 +1,58 @@
+WWW::Mechanize::Plugin::Ajax, version 0.001 (alpha)
+
+Plugin for WWW::Mechanize that provides the XMLHttpRequest object.
+
+
+INSTALLATION
+
+The easiest way to install this module is to use the CPAN module or
+the cpan script:
+
+    [sudo] perl -MCPAN -e "install WWW::Mechanize::Plugin::Ajax"
+
+    [sudo] cpan WWW::Mechanize::Plugin::Ajax
+
+Or you can use the following:
+
+    perl Makefile.PL
+    make
+    make test
+    [sudo] make install
+
+
+DEPENDENCIES
+
+This module requires:
+
+- perl 5.8.3 or later
+
+- WWW::Mechanize::Plugin::JavaScript 0.003 or later
+
+- XML::DOM::Lite
+
+- constant 1.03 or later
+
+- constant::private
+
+- The experimental version of WWW::Mechanize available at
+  http://www-mechanize.googlecode.com/svn/branches/plugins/
+
+
+DOCUMENTATION
+
+After installing, you can find documentation for these modules with
+the perldoc command.
+
+    perldoc WWW::Mechanize::Plugin::Ajax
+
+Or try using man (it's faster, in my experience):
+
+    man WWW::Mechanize::Plugin::Ajax
+
+
+COPYRIGHT AND LICENCE
+
+Copyright © 2008 Father Chrysostomos
+
+This program is free software; you may redistribute it and/or modify
+it under the same terms as perl.

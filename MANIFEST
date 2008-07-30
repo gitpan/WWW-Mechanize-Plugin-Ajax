@@ -1,0 +1,13 @@
+Changes
+idl/1-core1.idl
+idl/idl2interf
+lib/WWW/Mechanize/Plugin/Ajax/_xml_stuff.pm
+lib/WWW/Mechanize/Plugin/Ajax.pm
+Makefile.PL
+MANIFEST
+README
+t/test.t
+t/tests.pm
+t/threads/shared.pm
+t/threads.pm
+META.yml                                 Module meta-data (added by MakeMaker)
