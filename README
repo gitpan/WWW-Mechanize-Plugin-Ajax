@@ -1,6 +1,29 @@
-WWW::Mechanize::Plugin::Ajax, version 0.001 (alpha)
+WWW::Mechanize::Plugin::Ajax, version 0.02 (alpha)
 
 Plugin for WWW::Mechanize that provides the XMLHttpRequest object.
+
+
+CHANGES IN THIS RELEASE
+
+• Relative URIs are now supported.
+• URIs are now checked to see whether they originate from the same
+  server as the current page.
+• Fake cookies (created by setRequestHeader) are no longer clobbered
+  when there are real cookies.
+• The event methods addEventListener, removeEventListener and
+  dispatchEvent have been added.
+• There are now constants for the readyState
+  (XMLHttpRequest.UNSENT etc.).
+• Non-standard HTTP method names are no longer folded to uppercase.
+• The ‘open’ method now dies if the method name is not a valid HTTP
+  token or  if  it  is  CONNECT,  TRACE  or  TRACK  (case-tolerant).
+• The fragment part (#...) of a URI is now stripped.
+• The ‘open’ method now dies if the URL’s scheme is not supported.
+• Username and password are now gleaned from the URL if present and if
+  the corresponding args to open are omitted.
+• The username and password info no longer leaks from one object  to
+  the next. (The send method used to set the credentials for all XHR
+  objects that didn’t have any.)
 
 
 INSTALLATION
@@ -24,18 +47,20 @@ DEPENDENCIES
 
 This module requires:
 
-- perl 5.8.3 or later
+- perl 5.8.3 or higher
 
-- WWW::Mechanize::Plugin::JavaScript 0.003 or later
+- WWW::Mechanize::Plugin::JavaScript 0.004 or later
 
 - XML::DOM::Lite
 
-- constant 1.03 or later
+- constant::lexical
 
-- constant::private
+- HTML::DOM 0.013 or later
+
+- Encode 2.09 or higher
 
 - The experimental version of WWW::Mechanize available at
-  http://www-mechanize.googlecode.com/svn/branches/plugins/
+  http://www-mechanize.googlecode.com/svn/wm/branches/plugins/
 
 
 DOCUMENTATION

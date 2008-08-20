@@ -13,7 +13,7 @@ use WWW::Mechanize::Plugin::JavaScript 0.003 ();
 
 use warnings; no warnings 'utf8';
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 sub init {
 	my($pack,$mech) = (shift,shift);
@@ -41,6 +41,16 @@ sub init {
 			responseXML => OBJ | READONLY,
 			status => NUM | READONLY,
 			statusText => STR | READONLY,
+
+			addEventListener => METHOD | VOID,
+			removeEventListener => METHOD | VOID,
+			dispatchEvent => METHOD | BOOL,
+
+			_constants => [
+				map __PACKAGE__."::XMLHttpRequest::$_",qw[
+					UNSENT OPENED HEADERS_RECEIVED
+					LOADING DONE
+			]],
 		},
 	});
 
@@ -57,13 +67,47 @@ sub options {
 
 package WWW::Mechanize::Plugin::Ajax::XMLHttpRequest;
 
-use Encode 'decode';
-use Scalar::Util qw 'weaken blessed';
+our $VERSION = '0.02';
+
+use Encode 2.09 'decode';
+use Scalar::Util 1.09 qw 'weaken blessed refaddr';
+use HTML::DOM::Event;
+use HTML::DOM::Exception qw 'SYNTAX_ERR NOT_SUPPORTED_ERR';
+use HTTP::Headers;
 use HTTP::Headers::Util 'split_header_words';
 use HTTP::Request;
+no  LWP::Protocol();
+use URI 1;
+use URI::Escape;
 
-no constant 1.03 ();
+use constant 1.03 do { my $x; +{
+	map(+($_=>$x++), qw[ UNSENT OPENED HEADERS_RECEIVED LOADING DONE]),
+	SECURITY_ERR => 18,
+}};
+
+# There are six different states that the object can be in:
+#   UNSENT           - actually means uninitialised
+#   OPENED           - i.e., initialised
+#   SENT             - what it says
+#   HEADERS_RECEIVED - what it says
+#   LOADING          - body is downloading
+#   DONE             - zackly what it says
+# Five of them are represented by the constants above, and
+# are returned  by  the  readyState  method.  The  opened  and
+# sent states are conflated and  represented  by  the  OPENED  con-
+# stant in the badly-designed (if designed at all)  public  API.  The
+# SENT constant is used only internally,  which is why it is one of the
+# lexical constants below.  We need to make this distinction,  since cer-
+# tain methods are supposed to  die  in  the  SENT  state,  but  not  the
+# OPENED  state.  Furthermore,  we  *do*  trigger  orsc  when  the  state
+# changes to SENT.
+# ~~~ Actually, we don’t do that yet because all the tuits I’ve been
+#     receiving lately were square, rather than round.
+
+# The lc lexical constants are field indices.
+
 use constant::lexical {
+	SENT => 1.5,
 	mech => 0,
 	clone => 1,
 	method => 2,
@@ -92,11 +136,59 @@ sub new {
 
 sub open{
 	my ($self) = shift;
-	@$self[method,url,async,name,pw] = @_;
-	$self->[url] = "$self->[url]"; # HTTP::Request doesn’t like objects
+	@$self[method,url,async] = @_;
 	@_ < 3 and $self->[async] = 1; # default
+	shift,shift,shift;
+
+	for($self->[method]) {
+		/^[^]\0-\x1f\x7f()<>\@,;:\\"\/[?={} \t]+\z/
+			or die new HTML::DOM::Exception SYNTAX_ERR,
+				"Invalid HTTP method: $self->[method]";
+		/^(?:connect|trac[ek])\z/i
+			and die new HTML::DOM::Exception SECURITY_ERR,
+				"Use of the $_ method is forbidden";
+		s/^(?:delete|head|options|(?:ge|p(?:os|u))t)\z/uc/ie;
+	}	
+
+	$self->[url] = my $url = new_abs URI $self->[url],
+			$self->[mech]->base;
+	length LWP'Protocol'implementor $url->scheme
+		or die new HTML::DOM::Exception NOT_SUPPORTED_ERR,
+		"Protocol scheme '${\$url->scheme}' is not supported";
+
+	my $page_url = $self->[mech]->uri;
+	my $host1 = eval{$page_url->host};
+	my $host2 = eval{$url->host};
+	!defined $host1 || !defined $host2 || $host1 ne $host2
+		and die "Permission denied ($url: wrong host)";
+	$page_url->scheme ne $url->scheme
+		and die "Permission denied ($url: wrong scheme)";
+	no warnings 'uninitialized';
+	eval{$page_url->port}ne eval{$url->port}
+		and die "Permission denied ($url: wrong port)";
+	$url->fragment(undef); # ~~~ Shouldn’t WWW::Mechanize be doing this
+
+	if(@_){ # name arg
+		if( defined($self->[name] = shift) ) {
+			if(@_) {
+				$self->[pw] = shift;
+			}
+			elsif($url->can('userinfo')
+			      and defined(my $ui = $url->userinfo)) {
+				$ui =~ /:(.*)/s and
+					$self->[pw] = uri_unescape($1)
+			}
+		}
+	}
+	elsif($url->can('userinfo') and defined(my$ ui = $url->userinfo)) {
+		($self->[name],my $pw) = map uri_unescape($_),
+                                          split(":", $ui, 2);
+		$self->[pw] = $pw if defined $pw; # avoid clobbering it
+		                                  # when we shouldn’t
+	}
+
 	$self->[state]=1;
-	$self->[orsc] && $self->[orsc](); # ~~~ What about a ‘this’ value?
+	$self->_trigger_orsc;
 	return;
 }
 
@@ -105,14 +197,21 @@ sub send{
 	my $clone = $self->[clone] =
 		$self->[mech]->clone->clear_history(1);
 	$clone->stack_depth(1);
+	my $headers = new HTTP::Headers @{$self->[headers]||[]};
 	defined $self->[name] || defined $self->[pw] and
-		$clone->credentials($self->[name], $self->[pw]);
-	my $request = new HTTP::Request uc $self->[method], $self->[url],
-		$self->[headers]||[],
+		$headers->authorization_basic($self->[name], $self->[pw]);
+	my $request = new HTTP::Request $self->[method], $self->[url],
+		$headers,
 		$data;
+	my $jar = $clone->cookie_jar;
+	my $jar_class; # no, this has nothing to do with Java
+	$jar and $jar_class = ref $jar,
+	         bless $jar, 'WWW::Mechanize::Plugin::Ajax::Cookies';
 	$self->[state] = 2; # sent
-	$self->[orsc] && $self->[orsc](); # ~~~ What about a ‘this’ value?
+	$self->_trigger_orsc;
 	my $res = $self->[res] = $clone->request($request);
+
+	$jar and bless $jar, $jar_class;
 
 	$self->[xml] = ($res->content_type||'') =~
 	   /(?:^(?:application|text)\/xml|\+xml)\z/ || undef;
@@ -120,7 +219,7 @@ sub send{
 	# work correctly.
 
 	$self->[state] = 4; # complete
-	$self->[orsc] && $self->[orsc](); # ~~~ What about a ‘this’ value?
+	$self->_trigger_orsc;
 	delete $self->[tree] ;
 
 	return $res->is_success;
@@ -153,8 +252,8 @@ sub setRequestHeader {
 # Attributes
 
 sub onreadystatechange {
-	my $old = $_[0]->[orsc];
-	$_[0]->[orsc] = $_[1] if @_ > 1;
+	my $old = $_[0]->[orsc]{attr};
+	$_[0]->[orsc]{attr} = $_[1] if @_ > 1;
 	$old;
 }
 
@@ -199,21 +298,90 @@ sub statusText { # HTTP status massage
 }
 
 
+# EventTarget Methods
+
+sub _trigger_orsc {
+	(my $event = (my $self = shift)->[mech]->plugin('DOM')->tree
+		->createEvent
+	 )->initEvent('readystatechange'); # 2nd and 3rg args false
+	$self->dispatchEvent($event);
+	return;
+}
+
+sub addEventListener {
+	my ($self,$name,$listener, $capture) = @_;
+	return if $capture;
+	return unless $name =~ /^readystatechange\z/i;
+	$$self[orsc]{refaddr $listener} = $listener;
+	return;
+}
+
+sub removeEventListener {
+	my ($self,$name,$listener, $capture) = @_;
+	return if $capture;
+	return unless $name =~ /^readystatechange\z/i;
+	exists $$self[orsc] &&
+		delete $$self[orsc]{refaddr $listener};
+	return;
+}
+
+# ~~~ What about a ‘this’ value?
+sub dispatchEvent { # This is where all the work is.
+	my ($target, $event) = @_;
+	my $name = $event->type;
+	return unless $name =~ /^readystatechange\z/i;
+
+	my $eh = $target->[mech]->plugin('DOM')->tree->error_handler;
+
+	$event->_set_target($target);
+	$event->_set_eventPhase(HTML::DOM::Event::AT_TARGET);
+	$event->_set_currentTarget($target);
+	{eval {
+		defined blessed $_ && $_->can('handleEvent') ?
+			$_->handleEvent($event) : &$_($event);
+		1
+	} or $eh and &$eh() for values %{$target->[orsc]||last};}
+	return !cancelled $event;
+}
+
+
+
+package WWW::Mechanize::Plugin::Ajax::Cookies;
+require HTTP::Cookies;
+@ISA = HTTP::Cookies;
+
+our $VERSION = '0.02';
+
+# We have to override this to make sure that add_cookie_header doesn’t
+# clobber any fake cookies.
+
+sub add_cookie_header {
+	my $self = shift;
+	my($request)= @_ or return;
+	my @cookies = $request->header('Cookie');
+	my @ret = $self->SUPER::add_cookie_header(@_);
+	@ret and @cookies and
+	   join ', ', @cookies, ne $request->header('Cookie')
+	  and $request->push_header(cookie => \@cookies);
+	wantarray ? @ret : $ret[0];
+}
+
 !+()
 
 __END__
 
-How on earth should the control flow work if the
+How exactly should the control flow work if the
 connection is supposed to be asynchronous? If threads are supported, I
 could make the connection in another thread, and have some message passed
-back. The client script (in the main thread) will have to tell the
+back. In the absence of threads, I could use forking and signals, or use
+that regardless of thread support; but it might not be portable. In any
+case, the client script (in the main thread) will have to tell the
 XMLHttpRequest object to check whether it's ready yet (from some event
 loop, presumably), and, if it is, the
 latter will call its readystatechange event. This could be hooked into the
-wmpjs's timeout system.
+wmpjs's timeout system. Or do we need another API for it?
 
-If threads are not supported, I could just make it synchronous, and have
-the event triggered before the C<send> method returns. Maybe this should be
+Perhaps the current synchronous behaviour should be
 the default even with a threaded Perl, and the threaded behaviour should be
 optional.
 
@@ -223,7 +391,7 @@ WWW::Mechanize::Plugin::Ajax - WWW::Mechanize plugin that provides the XMLHttpRe
 
 =head1 VERSION
 
-Version 0.01 (alpha)
+Version 0.02 (alpha)
 
 =head1 SYNOPSIS
 
@@ -251,6 +419,47 @@ The C<XMLHttpRequest> object currently does not support asynchronous
 connections. Later this will probably become an option, at least for
 threaded perls.
 
+=head1 NON-HTTP ADDRESSES
+
+Since it uses L<LWP>, URI schemes other than http (e.g., file, ftp) are
+supported.
+
+=head1 INTERFACE
+
+The XMLHttpRequest interface members supported so far are:
+
+  Methods:
+  open
+  send
+  abort
+  getAllResponseHeaders
+  getResponseHeader
+  setRequestHeader
+  
+  Attributes:
+  onreadystatechange
+  readyState
+  responseText
+  responseXML
+  status
+  statusText
+  
+  Event Methods:
+  addEventListener
+  removeEventListener
+  dispatchEvent
+
+  Constants (static properties):
+  UNSENT
+  OPENED
+  HEADERS_RECEIVED
+  LOADING
+  DONE
+
+C<responseBody>, C<overrideMimeType>, C<getRequestHeader>, 
+C<removeRequestHeader> and more event attributes are like to be added in
+future versions.
+
 =head1 PREREQUISITES
 
 This plugin requires perl 5.8.3 or higher, and the following modules:
@@ -259,26 +468,30 @@ This plugin requires perl 5.8.3 or higher, and the following modules:
 
 =item *
 
-WWW::Mechanize::Plugin::JavaScript version 0.003 or
+WWW::Mechanize::Plugin::JavaScript version 0.004 or
 later
 
 =item *
 
-constant 1.03 or later
-
-=item *
-
-constant private
+constant::lexical
 
 =item *
 
 XML::DOM::Lite
 
+=item *
+
+HTML::DOM version 0.013 or later
+
+=item *
+
+Encode 2.09 or higher
+
 =back
 
 And you'll also need the experimental version of 
 WWW::Mechanize available at
-L<http://www-mechanize.googlecode.com/svn/branches/plugins/>
+L<http://www-mechanize.googlecode.com/svn/wm/branches/plugins/>
 
 =head1 BUGS
 
@@ -286,23 +499,27 @@ If you find any bugs, please report them to the author by e-mail
 (preferably with a
 patch :-).
 
-There is currently one known security issue: The server to which a request
-is sent is not checked to see whether it the same server from which
-the requesting page originated.
-
-Fake cookies (created with the C<setRequestHeader> method) are clobbered if
-there are any real cookies.
-
 XML::DOM::Lite is quite lenient toward badly-formed XML, so the 
 C<responseXML> property returns something useful even in cases when it
 should be null.
 
+The C<send> method does not yet accept a Document object as its argument.
+(Well, it does, but it stringifies it to '[object Document]' instead of
+serialising it as XML.)
+
+The SECURITY_ERR, NETWORK_ERR and ABORT_ERR constants are not available
+yet, as I don't know where to put them.
+
+In various other ways, it does not fully conform to the spec (which I only
+found out about recently). It would be quicker to fix them than to list
+them here. (And none of the Level 2 additions are implemented.)
+
 Furthermore, this module follows the badly-designed API that is
-unfortunately the de facto standard so I can't do anything about it.
+unfortunately the standard so I can't do anything about it.
 
 =head1 AUTHOR & COPYRIGHT
 
-Copyright (C) 2007 Father Chrysostomos
+Copyright (C) 2008 Father Chrysostomos
 <C<< ['sprout', ['org', 'cpan'].reverse().join('.')].join('@') >>E<gt>
 
 This program is free software; you may redistribute it and/or modify
@@ -315,3 +532,8 @@ L<WWW::Mechanize>
 L<WWW::Mechanize::Plugin::JavaScript>
 
 L<XML::DOM::Lite>
+
+The C<XMLHttpRequest> specification (draft as of August 2008):
+L<http://www.w3.org/TR/XMLHttpRequest/>
+
+C<XMLHttpRequest> Level 2: L<http://www.w3.org/TR/XMLHttpRequest2/>

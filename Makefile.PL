@@ -5,22 +5,31 @@ use ExtUtils::MakeMaker;
 %prq = (
         constant                           => 1.03, # multip. const. @ 1ce
         constant::lexical                  => 0,
+        Encode                             => 2.09, # decode $ref
+        HTML::DOM::Event                   => 0,
+	HTML::DOM::Exception               => 0,
         HTML::DOM::Interface               => 0,
+        HTTP::Cookies                      => 0,
+	HTTP::Headers                      => 0, # version ???
         HTTP::Headers::Util                => 0,
-        HTTP::Request                      => 0,
-        Scalar::Util                       => 0,
+        HTTP::Request                      => 0, # version ???
+	LWP::Protocol                      => 0,
+        Scalar::Util                       => 1.09,
+        URI                                => 1, # new_abs
+	URI::Escape                        => 0, # version ???
         warnings                           => 0,
         WWW::Mechanize::Plugin::JavaScript =>  .003, # correct types for
                                                     # bound read-only props
         XML::DOM::Lite                     => 0, # version???
 # for testing:
-	HTTP::Headers => 0, # version???
+	HTML::DOM::Exception               => .013, # code
 	HTTP::Response => 0, # version???
 	lib => 0,
 	strict => 0,
 	Test::More => 0,
 	utf8 => 0,
 	warnings => 0,
+        WWW::Mechanize::Plugin::JavaScript =>  .004, # location stringific.
 );
 
 eval{require WWW::Mechanize}
