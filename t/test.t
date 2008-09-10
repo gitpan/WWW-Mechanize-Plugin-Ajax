@@ -1,5 +1,9 @@
 #!perl
 
+# ~~~ We probably ought to rewrite this to use that HTTP testing module,
+#     whatever it’s called, instead of these hacks (which might actually be
+#     hiding bugs).
+
 use strict; use warnings;
 use lib 't';
 use Test::More;
@@ -44,6 +48,7 @@ $SRC{'POST http://foo.com/echo'}=['text/plain',sub{ shift->as_string }];
 $SRC{'GET http://foo.com/echo'}=['text/plain',sub{ shift->as_string }];
 
 
+#----------------------------------------------------------------#
 use tests 1; # plugin isa
 
 isa_ok $m->use_plugin('Ajax' => init => sub {
@@ -54,6 +59,7 @@ isa_ok $m->use_plugin('Ajax' => init => sub {
 }), 'WWW::Mechanize::Plugin::Ajax';
 
 
+#----------------------------------------------------------------#
 use tests 2; # inline & constructor
 
 $SRC{'GET http://foo.com/inline.html'}=['text/html',<<'EOT'];
@@ -74,14 +80,32 @@ $m->get('http://foo.com/inline.html');
 my $js = $m->plugin("JavaScript");
 
 
-use tests 5; # basic request, setRequestHeader, and responseText
+#----------------------------------------------------------------#
+use tests 36; # basic request, setRequestHeader, and responseText
 
 defined $js->eval(<<'EOT2') or die;
 	
-	with(request)
+	with(request) {
 		open('POST','http://foo.com/echo',0),
 		setRequestHeader('User-Agent', 'wmpajax'),
 		setRequestHeader('Accept-Language','el'),
+		setRequestHeader('Ignore-This', null),
+		setRequestHeader('accept-encoding', 'Carmigian'),
+		setRequestHeader('connectiON', 'user-agent'),
+		setRequestHeader('content-length', 2),
+		setRequestHeader('contEnt-Transfer-encoding', 'chunked'),
+		setRequestHeader('date', '1 jan 1929'),
+		setRequestHeader('expect', 'stand-on-one-leg'),
+		setRequestHeader('host', 'www.apple.com'),
+		setRequestHeader('kEep-Alive', 'and well'),
+		setRequestHeader('reFeRer', "http://google.com/"),
+		setRequestHeader('Te', 'kori'),
+		setRequestHeader('traIler', 'x-foo'),
+		setRequestHeader('transfer-encoding', 'gzip'),
+		setRequestHeader('upgrade', 'HTTP/7.0'),
+		setRequestHeader('via', 'http://1.2.3.4/'),
+		setRequestHeader('proxy-whatever', 'eetewvw'),
+		setRequestHeader('sec-otnoned', 'eeetewvw'),
 		send('stuff'),
 		ok(status === 200, '200 status') ||
 			diag(status+' '+typeof status),
@@ -94,9 +118,100 @@ defined $js->eval(<<'EOT2') or die;
 			'Accept-Language in request'),
 		ok(responseText.match(/\r?\n\r?\nstuff(?:\r?\n)?$/),
 			'body of the request')
-			|| diag(responseText)
+			|| diag(responseText),
+		ok(!responseText.match(/Ignore-This/i),
+			'setRequestHeader(foo,null) is ignored'),
+		ok(!responseText.match(/accept-encoding:.*Carmigian/i),
+			'setRequestHeader ignores Accept-Encoding'),
+		ok(!responseText.match(/connection/i),
+			'setRequestHeader ignores Connection header'),
+		ok(!responseText.match(/content-length: 2/i),
+			'setRequestHeader ignores Content-Length'),
+		ok(!responseText.match(/content-transfer-encoding/i),
+		  'setRequestHeader ignores Content-Transfer-Encoding'),
+		ok(!responseText.match(/date/i),
+			'setRequestHeader ignores Date header'),
+		ok(!responseText.match(/Expect/i),
+			'setRequestHeader ignores Expect header'),
+		ok(!responseText.match(/host/i),
+			'setRequestHeader ignores Host header'),
+		ok(!responseText.match(/keep-alive/i),
+			'setRequestHeader ignores "Stay alive!" header'),
+		ok(!responseText.match(/referer: http:\/\/google/i),
+			'setRequestHeader ignores Referer'),
+		ok(!responseText.match(/te/i),
+			'setRequestHeader ignores TE'),
+		ok(!responseText.match(/Trailer/i),
+			'setRequestHeader ignores Trailer header'),
+		ok(!responseText.match(/transfer-encoding/i),
+			'setRequestHeader ignores Transfer-Encoding'),
+		ok(!responseText.match(/upgrade/i),
+			'setRequestHeader ignores Upgrade header'),
+		ok(!responseText.match(/via/i),
+			'setRequestHeader ignores Via header'),
+		ok(!responseText.match(/proxy-/i),
+			'setRequestHeader ignores Proxy-*'),
+		ok(!responseText.match(/sec-/i),
+			'setRequestHeader ignores Sec-*')
+	}
+	0,function(){with(new XMLHttpRequest) {
+		try{ setRequestHeader('no','tono');
+		     fail('setRequestHeader fails to die before open');
+		     fail('setRequestHeader fails to die before open');
+		}catch(e) {
+			ok(e instanceof DOMException,
+			 'class of error; setRequestHeader b4 open')
+			is(e.code, DOMException.INVALID_STATE_ERR,
+			  'error code after setRequestHeader b4 open')
+		}
+		open('POST','http://foo.com/echo',0)
+		try{ setRequestHeader('n\\o','tono');
+		     fail('setRequestHeader with invalid header name');
+		     fail('setRequestHeader with invalid header name');
+		}catch(e) {
+		  ok(e instanceof DOMException,
+		    'class of error ' +
+		    '(setRequestHeader w/invalid header name)')
+		  is(e.code, DOMException.SYNTAX_ERR,
+		    'error code after setRequestHeader w/invalid header')
+		}
+		try{ setRequestHeader('no','t\x08ono');
+		     fail('setRequestHeader with invalid header value');
+		     fail('setRequestHeader with invalid header value');
+		}catch(e) {
+		  ok(e instanceof DOMException,
+		    'class of error ' +
+		    '(setRequestHeader w/invalid header value)')
+		  is(e.code, DOMException.SYNTAX_ERR,
+		    'error code after setRequestHeader w/invalid value')
+		}
+		var tn = {}
+		tn[XMLHttpRequest.OPENED] = 'on send';
+		tn[XMLHttpRequest.HEADERS_RECEIVED]
+			= 'upon receipt of headers';
+		tn[XMLHttpRequest.LOADING] = 'while loading';
+		tn[XMLHttpRequest.DONE] = 'when req is done';
+		onreadystatechange = function() {
+			try{ setRequestHeader('no','tono');
+			  fail('setRequestHeader fails to die '
+			    + tn[readyState]);
+			  fail('setRequestHeader fails to die '
+			    + tn[readyState]);
+			}catch(e) {
+			  ok(e instanceof DOMException,
+			   'class of error; setRequestHeader '
+			      + tn[readyState])
+			  is(e.code, DOMException.INVALID_STATE_ERR,
+			    'error code after setRequestHeader '
+			      +tn[readyState])
+			}
+		}
+		send('stuff')
+	}}()
 EOT2
 
+
+#----------------------------------------------------------------#
 use tests 2; # GET and send(null)
 
 defined $js->eval(<<'EOT3') or die;
@@ -111,6 +226,7 @@ defined $js->eval(<<'EOT3') or die;
 EOT3
 
 
+#----------------------------------------------------------------#
 use tests 12; # name & password
 {
 	# I’ve got to override LWP’s simple_request again, since what we
@@ -198,6 +314,7 @@ use tests 12; # name & password
 }
 
 
+#----------------------------------------------------------------#
 use tests 3; # cookies
 defined $js->eval(<<'EOT4') or die;
 	document.cookie="foo=bar;expires=" +
@@ -222,6 +339,7 @@ defined $js->eval(<<'EOT4') or die;
 	    new Date(new Date().getTime()-24000).toGMTString();
 	with(request)
 		open('GET','http://foo.com/echo',0),
+		setRequestHeader('Cookie','baz=bonk'),
 		send(),
 		is(responseText.match(/^Cookie: baz=bonk$/mg).length, 1,
 			'phake cookies without real ones')
@@ -229,6 +347,8 @@ defined $js->eval(<<'EOT4') or die;
 			+ responseText)
 EOT4
 
+
+#----------------------------------------------------------------#
 use tests 1; # 404
 
 defined $js->eval(<<'EOT5') or die;
@@ -239,6 +359,8 @@ defined $js->eval(<<'EOT5') or die;
 
 EOT5
 
+
+#----------------------------------------------------------------#
 use tests 10; # responseXML
 
 # XML example stolen from XML::DOM::Lite’s test suite
@@ -319,6 +441,8 @@ defined $js->eval(<<'EOT6') or die;
 		//     anything
 EOT6
 
+
+#----------------------------------------------------------------#
 use tests 2; # statusText
 defined $js->eval(<<'EOT7') or die;
 	with(request)
@@ -330,6 +454,8 @@ defined $js->eval(<<'EOT7') or die;
 		ok(statusText === 'Okey dokes', "200 statusText")
 EOT7
 
+
+#----------------------------------------------------------------#
 use tests 2; # get(All)ResponseHeader(s)
 defined $js->eval(<<'EOT8') or die;
 	with(request)
@@ -342,7 +468,10 @@ defined $js->eval(<<'EOT8') or die;
 			'getResponsHeader');
 EOT8
 
-use tests 5; # onreadystatechange and readyState
+
+#----------------------------------------------------------------#
+use tests 6; # onreadystatechange and readyState
+$m->plugin("DOM")->tree->error_handler(sub { push @::event_errors, $@ });
 defined $js->eval(<<'EOT9') or die;
 0,function(){ // the function scope provides us with a var ‘scratch-pad’
 	with(new XMLHttpRequest) {
@@ -358,10 +487,18 @@ defined $js->eval(<<'EOT9') or die;
 		ok(readyState === 4, 'readyState after completion')
 		ok(mystate.match(/[^4]4$/),
 			'onreadystatechange is triggered for state 4')
+
+		open('GET','http://foo.com/htmlexample',0)
+		onreadystatechange = null
+		send()
 	}
 }()
 EOT9
+is_deeply join('',@'event_errors), '',
+   'no errors are caused by onreadystatechange=null when the event occurs';
 
+
+#----------------------------------------------------------------#
 use tests 5; # unwritability of the properties
 defined $js->eval(<<'EOT10') or die;
 0,function(){
@@ -382,6 +519,8 @@ defined $js->eval(<<'EOT10') or die;
 }()
 EOT10
 
+
+#----------------------------------------------------------------#
 use tests 4; # encoding
 $SRC{'GET http://foo.com/explicit_utf-8.text'}=
 	['text/plain; charset=utf-8',"oo\311\237"];
@@ -409,6 +548,8 @@ defined $js->eval(<<'EOT11') or die;
 		is(responseText, 'É¹aq', 'iso-8859-1 for the charset')
 EOT11
 
+
+#----------------------------------------------------------------#
 use tests 4; # status & statusText exceptions
 defined $js->eval(<<'EOT12') or die;
 	with(new XMLHttpRequest) {
@@ -424,6 +565,8 @@ defined $js->eval(<<'EOT12') or die;
 	}
 EOT12
 
+
+#----------------------------------------------------------------#
 use tests 1; # file protocol and relative URIs
 $SRC{'GET file:///stuff'} = ['text/html','<title>stuff</title><p>'];
 $SRC{'GET file:///morestuff'} = ['text/html','<title>morstuff</title><p>'];
@@ -438,23 +581,49 @@ defined $js->eval(<<'EOT1\3') or die;
 	}
 EOT1\3
 
-use tests 5; # s’curity
+
+#----------------------------------------------------------------#
+use tests 10; # s’curity
 $m->get('http://foo.com/htmlexample');
 $js = $m->plugin("JavaScript");
 defined $js->eval(<<'EOT14') or die;
 	with(new XMLHttpRequest) {
 		try{open('GET','http://foo.com:8');
+			fail('exception on open with wrong port')
 			fail('exception on open with wrong port')}
-		catch($){pass('exception on open with wrong port')}
+		catch($){
+			ok($ instanceof DOMException,
+			 'class of error thrown by open w/wrong port')
+			is($.code, 18/*~~~SECURITY_ERR*/,
+			  'error code after open w/wrong port')
+		}
 		try{open('GET','http://www.foo.com/');
+			fail('exception on open with wrong host')
 			fail('exception on open with wrong host')}
-		catch($){pass('exception on open with wrong host')}
+		catch($){
+			ok($ instanceof DOMException,
+			 'class of error thrown by open w/wrong host')
+			is($.code, 18/*~~~SECURITY_ERR*/,
+			  'error code after open w/wrong host')
+		}
 		try{open('GET','ftp://www.foo.com/');
+			fail('exception on open with wrong scheme')
 			fail('exception on open with wrong scheme')}
-		catch($){pass('exception on open with wrong scheme')}
-		try{open('GET','rsync://localhost:5432/ooo');
+		catch($){
+			ok($ instanceof DOMException,
+			 'class of error thrown by open w/wrong scheme')
+			is($.code, 18/*~~~SECURITY_ERR*/,
+			  'error code after open w/wrong scheme')
+		}
+		try{open('GET','ftp://localhost:5432/ooo');
+			fail('exception on open with everything wrong')
 			fail('exception on open with everything wrong')}
-		catch($){pass('exception on open with everything wrong')}
+		catch($){
+			ok($ instanceof DOMException,
+			 'class of err thrown by open w/everything wrong')
+			is($.code, 18/*~~~SECURITY_ERR*/,
+			  'error code after open w/everything wrong')
+		}
 	}
 EOT14
 $SRC{'GET data:text/html,%3Ctitle%3E%3C/title%3E%3Cp%3E'}
@@ -463,10 +632,18 @@ $m->get('data:text/html,%3Ctitle%3E%3C/title%3E%3Cp%3E');
 $js = $m->plugin("JavaScript");
 defined $js->eval(<<'EOT15') or die;
 	try{new XMLHttpRequest().open('GET','data:,Perl%20is%20good');
+	    fail('exception on open when neither iri has an ihost part')
 	    fail('exception on open when neither iri has an ihost part')}
-	catch($){pass('exception on open when neither iri has an ihost')}
+	catch($){
+		ok($ instanceof DOMException,
+		 'class of err thrown by open w/two non-ihost paths')
+		is($.code, 18/*~~~SECURITY_ERR*/,
+		  'error code after open w/two non-ihost paths')
+	}
 EOT15
 
+
+#----------------------------------------------------------------#
 use tests 7; # EventTarget
 $m->back();
 $js = $m->plugin("JavaScript");
@@ -509,12 +686,15 @@ defined $js->eval(<<'EOT16') or die;
 			is(events.split('').sort(),'2,4,6',
 				'effect of dispatchEvent')
 			send(null)
-			is(events.split('').sort(),'2,2,2,4,4,4,6,6,6',
+			is(events.split('').sort(),
+				'2,2,2,2,2,4,4,4,4,4,6,6,6,6,6',
 				'send triggers event handlers')
 		}
 	}())
 EOT16
 
+
+#----------------------------------------------------------------#
 use tests 5; # Constance
 defined $js->eval(<<'EOT17') or die;
 	ok(XMLHttpRequest.UNSENT === 0, 'UNSENT')
@@ -524,7 +704,9 @@ defined $js->eval(<<'EOT17') or die;
 	ok(XMLHttpRequest. DONE === 4, 'DONE')
 EOT17
 
-use tests 16; # open’s idiosyncrasies
+
+#----------------------------------------------------------------#
+use tests 19; # open’s idiosyncrasies
 {
 	my $what = 'method';
 	local *LWP::UserAgent::simple_request = sub {
@@ -604,7 +786,22 @@ use tests 16; # open’s idiosyncrasies
 			is(responseText, location, 'fragments R stripped')
 	EOT18
 }
+defined $js->eval(<<'EOT18a') or die;
+	with(new XMLHttpRequest) {
+		open('get', 'echo'),
+		setRequestHeader ("Foo", "bar");
+		send(),
+		open('get', 'echo'),
+		is(responseText, '', 'open clears the responseText'),
+		is(responseXML, null, 'open clears the response document')
+		send()
+		ok(!responseText.match(/Foo/),
+			'open clears req headers') || diag(responseText)
+	}
+EOT18a
 
+
+#----------------------------------------------------------------#
 use tests 1; # Base url determination
 {
 	local *LWP::UserAgent::simple_request = sub {
@@ -631,6 +828,8 @@ defined $js->eval(<<'EOT19') or die;
 		is(responseText, 'stuff/bar', 'base URI')
 EOT19
 
+
+#----------------------------------------------------------------#
 use tests 2; # unsupported url scheme
 defined $js->eval(<<'EOT20') or die;
 	try{
@@ -646,6 +845,93 @@ defined $js->eval(<<'EOT20') or die;
 	}
 EOT20
 
+
+#----------------------------------------------------------------#
+use tests 13; # specifics of send
+defined $js->eval(<<'EOT21') or die;
+0,function(){
+with(new XMLHttpRequest) {
+	open("GET", '/echo',0);
+	
+	var statechanges = ''
+	onreadystatechange = function(){
+		statechanges += readyState
+	}
+	send()
+	is(statechanges, '1234', 'readystatechange events caused by send');
+
+	onreadystatechange = null;
+	open('GET', '/echo',0);
+	send("all sorts of stuff");
+	ok(!responseText.match(/all sorts/), 'get requests are bodiless')
+}
+with(new XMLHttpRequest) {
+	try{ send();
+	     fail('send fails to die before open');
+	     fail('send fails to die before open');
+	}catch(e) {
+		ok(e instanceof DOMException,
+		 'class of error when send is called b4 open')
+		is(e.code, DOMException.INVALID_STATE_ERR,
+		  'error code when send is called b4 open')
+	}
+
+	open("GET", '/echo',0);
+
+	onreadystatechange = function() {
+		try{ send();
+		  fail('send fails to die in state ' + readyState);
+		  fail('send fails to die in state ' + readyState);
+		}catch(e) {
+		  ok(e instanceof DOMException,
+		   'class of error when send is called in state '
+		      + readyState)
+		  is(e.code, DOMException.INVALID_STATE_ERR,
+		    'error code when send is called in state '
+		      + readyState)
+		}
+	}
+	send('stuff')
+}
+}()
+EOT21
+{
+	no warnings 'redefine';
+	local *LWP::UserAgent::simple_request = sub {
+		my($lwp, $request) = @_;
+		$lwp->_request_sanity_check($request);
+		$request = $lwp->prepare_request($request);
+		is($request->content, '', 'head requests are bodiless');
+
+		my $h = new HTTP::Headers;
+		my $r = new HTTP::Response 200, 'Okey dokes', $h, '';
+		request $r $request;
+		$r
+	};
+	defined $js->eval(<<'	EOT21a') or die;
+		with(new XMLHttpRequest) {
+			open('HEAD', '/echo',0);
+			send('this should be ignored')
+		}
+	EOT21a
+}
+
+
+#----------------------------------------------------------------#
+use tests 1; # disabling of scripts
+$SRC{'GET http://foo.com/scripts'}=
+	['text/html; charset=utf-8','<script>throw"fit"</script>'];
+{	
+	my $warnings;
+	local $SIG{__WARN__} = sub { ++ $warnings };
+	defined $js->eval(<<'	EOT22') or die;
+		with(new XMLHttpRequest)
+			open("GET", '/scripts',0),
+			send()
+	EOT22
+	is $warnings, undef, 'scripts are not run';
+}
+	
 
 
 __END__

@@ -6,6 +6,7 @@ use HTML::DOM::Interface ':all';
 use Scalar::Util 'weaken';
 
 # just 2 check the version:
+use WWW::Mechanize::Plugin::DOM 0.005 ();
 use WWW::Mechanize::Plugin::JavaScript 0.003 ();
 # Note: It’s actually WWW::Mechanize::Plugin::JavaScript::JE 0.003 that we
 # need,  *if* the JE back end is being used. Since we would need version 
@@ -13,7 +14,7 @@ use WWW::Mechanize::Plugin::JavaScript 0.003 ();
 
 use warnings; no warnings 'utf8';
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 sub init {
 	my($pack,$mech) = (shift,shift);
@@ -72,7 +73,8 @@ our $VERSION = '0.02';
 use Encode 2.09 'decode';
 use Scalar::Util 1.09 qw 'weaken blessed refaddr';
 use HTML::DOM::Event;
-use HTML::DOM::Exception qw 'SYNTAX_ERR NOT_SUPPORTED_ERR';
+use HTML::DOM::Exception qw 'SYNTAX_ERR NOT_SUPPORTED_ERR
+                             INVALID_STATE_ERR';
 use HTTP::Headers;
 use HTTP::Headers::Util 'split_header_words';
 use HTTP::Request;
@@ -134,6 +136,9 @@ sub new {
 
 # Instance Methods
 
+my $http_token = '[^]\0-\x1f\x7f()<>\@,;:\\\"/[?={} \t]+';
+my $http_field_val = '[^\0-\ch\ck\cl\cn-\x1f]*';
+
 sub open{
 	my ($self) = shift;
 	@$self[method,url,async] = @_;
@@ -141,7 +146,7 @@ sub open{
 	shift,shift,shift;
 
 	for($self->[method]) {
-		/^[^]\0-\x1f\x7f()<>\@,;:\\"\/[?={} \t]+\z/
+		/^$http_token\z/o
 			or die new HTML::DOM::Exception SYNTAX_ERR,
 				"Invalid HTTP method: $self->[method]";
 		/^(?:connect|trac[ek])\z/i
@@ -160,12 +165,15 @@ sub open{
 	my $host1 = eval{$page_url->host};
 	my $host2 = eval{$url->host};
 	!defined $host1 || !defined $host2 || $host1 ne $host2
-		and die "Permission denied ($url: wrong host)";
+		and die new HTML'DOM'Exception SECURITY_ERR,
+			"Permission denied ($url: wrong host)";
 	$page_url->scheme ne $url->scheme
-		and die "Permission denied ($url: wrong scheme)";
+		and die new HTML'DOM'Exception SECURITY_ERR,
+			"Permission denied ($url: wrong scheme)";
 	no warnings 'uninitialized';
 	eval{$page_url->port}ne eval{$url->port}
-		and die "Permission denied ($url: wrong port)";
+		and die new HTML'DOM'Exception SECURITY_ERR,
+			"Permission denied ($url: wrong port)";
 	$url->fragment(undef); # ~~~ Shouldn’t WWW::Mechanize be doing this
 
 	if(@_){ # name arg
@@ -187,29 +195,51 @@ sub open{
 		                                  # when we shouldn’t
 	}
 
+	delete @$self[res,headers];
 	$self->[state]=1;
 	$self->_trigger_orsc;
 	return;
 }
 
 sub send{
+	die new HTML::DOM::Exception INVALID_STATE_ERR,
+	    "send can only be called once between calls to open"
+	  unless $_[0][state] == OPENED;
+
 	my ($self, $data) = @_;
 	my $clone = $self->[clone] =
 		$self->[mech]->clone->clear_history(1);
 	$clone->stack_depth(1);
+	$clone->plugin('DOM')->scripts_enabled(0);
 	my $headers = new HTTP::Headers @{$self->[headers]||[]};
 	defined $self->[name] || defined $self->[pw] and
 		$headers->authorization_basic($self->[name], $self->[pw]);
 	my $request = new HTTP::Request $self->[method], $self->[url],
 		$headers,
-		$data;
+		$self->[method] =~ /^(?:get|head)\z/i ? () : $data;
 	my $jar = $clone->cookie_jar;
 	my $jar_class; # no, this has nothing to do with Java
 	$jar and $jar_class = ref $jar,
 	         bless $jar, 'WWW::Mechanize::Plugin::Ajax::Cookies';
-	$self->[state] = 2; # sent
+
+	# The spec says to set the send() flag only in it’s an asynchronous
+	# request. I think that is a mistake, because the following would
+	# cause infinite recursion otherwise:
+	#  with( new XMLHttpRequest ) {
+	#    open ('GET', 'foo', false) //synchronous
+	#    onreadystatechange = function() {
+	#      if(readyState == XMLHttpRequest.OPENED) send()
+	#    }
+	#    send()
+	#  }
+	$self->[state] = SENT;
+	$self->_trigger_orsc;
+
+	$self->[state] = HEADERS_RECEIVED; # ~~~ This is in the wrong place
 	$self->_trigger_orsc;
 	my $res = $self->[res] = $clone->request($request);
+	$self->[state] = LOADING;
+	$self->_trigger_orsc;
 
 	$jar and bless $jar, $jar_class;
 
@@ -242,23 +272,73 @@ sub getResponseHeader {
 }
 
 sub setRequestHeader {
+	die new HTML::DOM::Exception INVALID_STATE_ERR,
+	    "setRequestHeader can only be called between open and send"
+	  unless $_[0][state] == OPENED;
+	$_[1] =~ /^$http_token\z/o
+		or die new HTML::DOM::Exception SYNTAX_ERR,
+			"Invalid HTTP header name: $_[1]";
+	defined $_[2] or return;
+	$_[2] =~ /^$http_field_val\z/o
+		or die new HTML::DOM::Exception SYNTAX_ERR,
+			"Invalid HTTP header value: $_[2]";
+
+	# This regexp does not include all those in the 4th  of  Sep.
+	# Editor’s Draft of the spec. Anyway the spec only says ‘SHOULD’,
+	# so we are still compliant in this regard.  I have  very  specific
+	# reasons for letting these through:
+	#   Accept-Charset  There is no reason the user agent  should  have
+	#                   to support charsets requested by a script.  The
+	#                   script itself can decode the charset (once I’ve
+	#                   implemented overrideMimeType or  responseData).
+	#   Authorization   If the user agent does not support an authenti-
+	#                   cation method, this should not prevent a script
+	#                   from using it.
+	#   Cookie(2)       Fake cookies are known enough to be documented
+	#                   in some books on Ajax/JS; e.g., the Rhino.
+	#   User-Agent      Some server-side scripts might want to distin-
+	#                   guish between actual user requests and script-
+	#                   based requests. After all, the scripts will be
+	#                   originating from the same server, so it’s not a
+	#                   matter of security.
+	return if $_[1] =~ /^(?:
+		(?:
+			accept-encoding
+			  |
+			con(?:nection|tent-(?:length|transfer-encoding))
+			  |
+			(?:dat|keep-aliv|upgrad)e
+			  |
+			(?:expec|hos)t
+			  |
+			referer
+			  |
+			t(?:e|ra(?:iler|nsfer-encoding))
+			  |
+			via
+			  |
+		)\z
+		  |
+		(?:proxy|sec)-
+	)/xi;
+
 	push@{shift->[headers] ||= []}, shift, shift;
 }
-# ~~~ Quoth Ajax for Web Application Developers: ‘If a header is not well
-# formed, it is not used and an error occurs, which stops the header from
-# being set.’ What does this mean?
 
 
 # Attributes
 
 sub onreadystatechange {
 	my $old = $_[0]->[orsc]{attr};
-	$_[0]->[orsc]{attr} = $_[1] if @_ > 1;
+	defined $_[1]
+		? $_[0]->[orsc]{attr} = $_[1]
+		: delete $_[0]->[orsc]{attr}
+	  if @_ > 1;
 	$old;
 }
 
 sub readyState {
-	shift->[state];
+	int shift->[state];
 }
 
 sub responseText { # string response from the server
@@ -391,7 +471,7 @@ WWW::Mechanize::Plugin::Ajax - WWW::Mechanize plugin that provides the XMLHttpRe
 
 =head1 VERSION
 
-Version 0.02 (alpha)
+Version 0.03 (alpha)
 
 =head1 SYNOPSIS
 
@@ -444,7 +524,7 @@ The XMLHttpRequest interface members supported so far are:
   status
   statusText
   
-  Event Methods:
+  Event-Related Methods:
   addEventListener
   removeEventListener
   dispatchEvent
@@ -457,7 +537,7 @@ The XMLHttpRequest interface members supported so far are:
   DONE
 
 C<responseBody>, C<overrideMimeType>, C<getRequestHeader>, 
-C<removeRequestHeader> and more event attributes are like to be added in
+C<removeRequestHeader> and more event attributes are likely to be added in
 future versions.
 
 =head1 PREREQUISITES
@@ -469,6 +549,11 @@ This plugin requires perl 5.8.3 or higher, and the following modules:
 =item *
 
 WWW::Mechanize::Plugin::JavaScript version 0.004 or
+later
+
+=item *
+
+WWW::Mechanize::Plugin::DOM version 0.005 or
 later
 
 =item *
@@ -530,6 +615,8 @@ it under the same terms as perl.
 L<WWW::Mechanize>
 
 L<WWW::Mechanize::Plugin::JavaScript>
+
+L<WWW::Mechanize::Plugin::DOM>
 
 L<XML::DOM::Lite>
 

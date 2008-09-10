@@ -18,6 +18,7 @@ use ExtUtils::MakeMaker;
         URI                                => 1, # new_abs
 	URI::Escape                        => 0, # version ???
         warnings                           => 0,
+        WWW::Mechanize::Plugin::DOM        =>  .005, # scripts_enabled
         WWW::Mechanize::Plugin::JavaScript =>  .003, # correct types for
                                                     # bound read-only props
         XML::DOM::Lite                     => 0, # version???
@@ -37,7 +38,7 @@ eval{require WWW::Mechanize}
 or $prq{WWW::Mechanize} = 9999, print <<, "\n" ;
 This module requires the experimental version of WWW::Mechanize that
 is to be found at the following URL:
-http://www-mechanize.googlecode.com/svn/branches/plugins/
+http://www-mechanize.googlecode.com/svn/wm/branches/plugins/
 
 
 

@@ -1,5 +1,28 @@
 Revision history for WWW::Mechanize::Plugin::Ajax
 
+0.03    9 September, 2008
+        • The errors produced when the URL passed to open is from the
+          wrong site/port/etc. are now DOMException objects.
+        • The open method now clears the responseText and the
+          request headers.
+        • The send method now raises a readystatechange event on send-
+          ing (without changing the readyState)  and for the ‘loading’
+          state (3).
+        • The setRequestHeader method now dies when called at a time
+          other than between open and send.
+        • setRequestHeader now throws a syntax error when the argu-
+          ments do not conform to HTTP syntax.
+        • The send method no longer runs scripts on HTML pages that
+          it fetches.
+        • setRequestHeader now ignores certain HTTP headers for the
+          sake of security and HTTP compliancy.
+        • The send method now dies when the readyState is not OPENED
+          or when it is called recursively.
+        • Assigning null to onreadystatechange no longer causes warn-
+          ings and errors during event dispatch.
+        • The argument to the send method is now ignored for GET and
+          HEAD requests.
+
 0.02    19 August, 2008
         • Relative URIs are now supported.
         • URIs are now checked to see whether they originate from the

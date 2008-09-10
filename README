@@ -1,29 +1,29 @@
-WWW::Mechanize::Plugin::Ajax, version 0.02 (alpha)
+WWW::Mechanize::Plugin::Ajax, version 0.03 (alpha)
 
 Plugin for WWW::Mechanize that provides the XMLHttpRequest object.
 
 
 CHANGES IN THIS RELEASE
 
-• Relative URIs are now supported.
-• URIs are now checked to see whether they originate from the same
-  server as the current page.
-• Fake cookies (created by setRequestHeader) are no longer clobbered
-  when there are real cookies.
-• The event methods addEventListener, removeEventListener and
-  dispatchEvent have been added.
-• There are now constants for the readyState
-  (XMLHttpRequest.UNSENT etc.).
-• Non-standard HTTP method names are no longer folded to uppercase.
-• The ‘open’ method now dies if the method name is not a valid HTTP
-  token or  if  it  is  CONNECT,  TRACE  or  TRACK  (case-tolerant).
-• The fragment part (#...) of a URI is now stripped.
-• The ‘open’ method now dies if the URL’s scheme is not supported.
-• Username and password are now gleaned from the URL if present and if
-  the corresponding args to open are omitted.
-• The username and password info no longer leaks from one object  to
-  the next. (The send method used to set the credentials for all XHR
-  objects that didn’t have any.)
+• The errors produced when the URL passed to open is from the wrong
+  site/port/etc. are now DOMException objects.
+• The open method now clears the responseText and the request headers.
+• The send method now raises a  readystatechange  event on  sending
+  (without changing the readyState) and for the ‘loading’ state (3).
+• The setRequestHeader method now dies when called at a time other
+  than between open and send.
+• setRequestHeader now throws a syntax error when the arguments do not
+  conform to HTTP syntax.
+• The send method no longer runs scripts on HTML pages that
+  it fetches.
+• setRequestHeader now ignores certain HTTP headers for the sake of
+  security and HTTP compliancy.
+• The send method now dies when the readyState is not OPENED or when
+  it is called recursively.
+• Assigning null to onreadystatechange no longer causes warnings and
+  errors during event dispatch.
+• The argument to the send method is now ignored for GET and
+  HEAD requests.
 
 
 INSTALLATION
@@ -48,6 +48,8 @@ DEPENDENCIES
 This module requires:
 
 - perl 5.8.3 or higher
+
+- WWW::Mechanize::Plugin::DOM 0.005 or later
 
 - WWW::Mechanize::Plugin::JavaScript 0.004 or later
 
