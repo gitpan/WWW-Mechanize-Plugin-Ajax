@@ -1,10 +1,16 @@
-WWW::Mechanize::Plugin::Ajax, version 0.03 (alpha)
+WWW::Mechanize::Plugin::Ajax, version 0.04 (alpha)
 
 Plugin for WWW::Mechanize that provides the XMLHttpRequest object.
 
 
-CHANGES IN THIS RELEASE
+RECENT CHANGES
 
+0.04
+----
+No new features; just updated to work with LWP 5.815
+
+0.03
+----
 • The errors produced when the URL passed to open is from the wrong
   site/port/etc. are now DOMException objects.
 • The open method now clears the responseText and the request headers.

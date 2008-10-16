@@ -1,5 +1,8 @@
 Revision history for WWW::Mechanize::Plugin::Ajax
 
+0.04    15 October, 2008
+        No new features; simply updated to work with LWP 5.815
+
 0.03    9 September, 2008
         • The errors produced when the URL passed to open is from the
           wrong site/port/etc. are now DOMException objects.

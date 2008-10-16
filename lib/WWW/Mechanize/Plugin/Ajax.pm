@@ -14,7 +14,7 @@ use WWW::Mechanize::Plugin::JavaScript 0.003 ();
 
 use warnings; no warnings 'utf8';
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 sub init {
 	my($pack,$mech) = (shift,shift);
@@ -68,7 +68,7 @@ sub options {
 
 package WWW::Mechanize::Plugin::Ajax::XMLHttpRequest;
 
-our $VERSION = '0.02';
+our $VERSION = '0.04';
 
 use Encode 2.09 'decode';
 use Scalar::Util 1.09 qw 'weaken blessed refaddr';
@@ -207,10 +207,13 @@ sub send{
 	  unless $_[0][state] == OPENED;
 
 	my ($self, $data) = @_;
-	my $clone = $self->[clone] =
-		$self->[mech]->clone->clear_history(1);
-	$clone->stack_depth(1);
-	$clone->plugin('DOM')->scripts_enabled(0);
+	my $clone = $self->[clone] ||=
+		bless $self->[mech]->clone, 'LWP::UserAgent';
+		# ~~~ This doesn’t allow for plugins that cache, etc.
+		#     What’s the best way to circumvent the DOM plugin,
+		#     Mech’s odd method of dealing with credentials, etc.?
+#	$clone->stack_depth(1);
+#	$clone->plugin('DOM')->scripts_enabled(0);
 	my $headers = new HTTP::Headers @{$self->[headers]||[]};
 	defined $self->[name] || defined $self->[pw] and
 		$headers->authorization_basic($self->[name], $self->[pw]);
@@ -222,7 +225,7 @@ sub send{
 	$jar and $jar_class = ref $jar,
 	         bless $jar, 'WWW::Mechanize::Plugin::Ajax::Cookies';
 
-	# The spec says to set the send() flag only in it’s an asynchronous
+	# The spec says to set the send() flag only if it’s an asynchronous
 	# request. I think that is a mistake, because the following would
 	# cause infinite recursion otherwise:
 	#  with( new XMLHttpRequest ) {
@@ -430,7 +433,7 @@ package WWW::Mechanize::Plugin::Ajax::Cookies;
 require HTTP::Cookies;
 @ISA = HTTP::Cookies;
 
-our $VERSION = '0.02';
+our $VERSION = '0.04';
 
 # We have to override this to make sure that add_cookie_header doesn’t
 # clobber any fake cookies.
@@ -471,7 +474,7 @@ WWW::Mechanize::Plugin::Ajax - WWW::Mechanize plugin that provides the XMLHttpRe
 
 =head1 VERSION
 
-Version 0.03 (alpha)
+Version 0.04 (alpha)
 
 =head1 SYNOPSIS
 

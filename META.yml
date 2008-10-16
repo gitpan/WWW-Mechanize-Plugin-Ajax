@@ -1,10 +1,13 @@
-# http://module-build.sourceforge.net/META-spec.html
-#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
-name:         WWW-Mechanize-Plugin-Ajax
-version:      0.03
-version_from: lib/WWW/Mechanize/Plugin/Ajax.pm
-installdirs:  site
-requires:
+--- #YAML:1.0
+name:                WWW-Mechanize-Plugin-Ajax
+version:             0.04
+abstract:            WWW::Mechanize plugin that provides the XMLHttpRequest object
+license:             ~
+author:              
+    - Father Chrysostomos <sprout & cpan . org>
+generated_by:        ExtUtils::MakeMaker version 6.44
+distribution_type:   module
+requires:     
     constant:                      1.03
     constant::lexical:             0
     HTML::DOM::Interface:          0
@@ -20,6 +23,6 @@ requires:
     warnings:                      0
     WWW::Mechanize::Plugin::JavaScript: 0.003
     XML::DOM::Lite:                0
-
-distribution_type: module
-generated_by: ExtUtils::MakeMaker version 6.30
+meta-spec:
+    url:     http://module-build.sourceforge.net/META-spec-v1.3.html
+    version: 1.3

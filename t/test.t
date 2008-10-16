@@ -1,9 +1,5 @@
 #!perl
 
-# ~~~ We probably ought to rewrite this to use that HTTP testing module,
-#     whatever it’s called, instead of these hacks (which might actually be
-#     hiding bugs).
-
 use strict; use warnings;
 use lib 't';
 use Test::More;
@@ -15,38 +11,60 @@ use HTTP::Response;
 
 our %SRC;
 
-my $m = new WWW::Mechanize;
-
 # For faking HTTP requests; this gets the source code from the global %SRC
 # hash, using the "$method $url" as the key. Each element of the hash
 # is an array ref containing (0) the Content-Type and (1) text that is to
 # become the body of the response or a coderef.
 no warnings 'redefine';
-*LWP::UserAgent::simple_request = sub {
-	my($lwp, $request) = @_;
-	$lwp->_request_sanity_check($request);
-#diag("B4:\n".$request->as_string) if $request->as_string =~ /Cookie/;
-	$request = $lwp->prepare_request($request);
-#diag("AF:\n".$request->as_string) if $request->as_string =~ /Cookie/;
-	
-	my $src_ary = $'SRC{join ' ',method $request,$request->uri};
-	my $h = new HTTP::Headers;
-	header $h 'Content-Type', $$src_ary[0] if $src_ary;
-	my $r = new HTTP::Response
-		$src_ary ? (200, 'Okey dokes') : (404, 'Knot found'),
-		$h,
-		$src_ary && ref $$src_ary[1]
+{
+	package FakeProtocol;
+	use LWP::Protocol;
+	our @ISA = LWP::Protocol::;
+
+	LWP'Protocol'implementor $_ => __PACKAGE__ for qw/ http file /;
+
+	sub _create_response_object {
+		my $request = shift;
+
+		my $src_ary =
+			$'SRC{join ' ',method $request,$request->uri};
+		my $h = new HTTP::Headers;
+		header $h 'Content-Type', $$src_ary[0] if $src_ary;
+		my $r = new HTTP::Response
+			$src_ary
+				? (200, 'Okey dokes')
+				: (404, 'Knot found'),
+			$h;
+		$r, $src_ary && ref $$src_ary[1]
 			? $$src_ary[1]->($request)
 			: $$src_ary[1];
-	request $r $request;
-	$r
-};
+
+	}
+
+	sub request {
+		my($self, $request, $proxy, $arg) = @_;
+	
+		          # This weird syntax ensures it can be overridden:
+		my($response,$src) =
+			(\&{'_create_response_object'})->($request);
+
+		my $done;
+		defined $src or $src = "";
+		$self->collect($arg, $response, sub {
+			\($done++ ? '' : "$src")
+			      # LWP has a heart attack without those quotes
+		});
+	}
+	
+}
 
 # For echo requests (well, not exactly; the responses have an HTTP response
 # header as well)
 $SRC{'POST http://foo.com/echo'}=['text/plain',sub{ shift->as_string }];
 $SRC{'GET http://foo.com/echo'}=['text/plain',sub{ shift->as_string }];
 
+
+my $m = new WWW::Mechanize;
 
 #----------------------------------------------------------------#
 use tests 1; # plugin isa
@@ -229,28 +247,30 @@ EOT3
 #----------------------------------------------------------------#
 use tests 12; # name & password
 {
-	# I’ve got to override LWP’s simple_request again, since what we
-	# have above is not sufficient for this case.
+	# I’ve got to override one of FakeProtocol’s function, since what
+	# we have above is not sufficient for this case.
 
-	local *LWP::UserAgent::simple_request = sub {
-		my($lwp, $request) = @_;
-		$lwp->_request_sanity_check($request);
-		$request = $lwp->prepare_request($request);
-	
+	no warnings 'redefine';
+	local *FakeProtocol::_create_response_object = sub {
+		my $request = shift;
+
 		my $h = new HTTP::Headers;
 		header $h 'Content-Type', 'text/html';
 		header $h 'WWW-Authenticate', 'basic realm="foo"';
+		my $auth_present = $request->header('Authorization');
 		my $r = new HTTP::Response
-			$request->header('Authorization')
-			? (200, "hokkhe", $h,
-			  '<title>Wellcum</title><h1>'.
+			$auth_present
+			? (200, "hokkhe", $h)
+			: (401, "Hugo's there", $h);
+		my $src =
+			$auth_present
+			? '<title>Wellcum</title><h1>'.
 			  $request->authorization_basic .'</h1>'
-			):(401, "Hugo's there", $h,
-			  '<title>401 Forbidden</title><h1>Fivebidden</h1>'
-			);
-		request $r $request;
-#		diag($request->as_string);
-		$r
+			: '<title>401 Forbidden</title><h1>Fivebidden</h1>'
+			;
+#use DDS;
+#diag Dump $request->authorization_basic;
+		$r, $src;
 	};
 
 	defined $js->eval(<<'	EOT3b') or die;
@@ -462,8 +482,8 @@ defined $js->eval(<<'EOT8') or die;
 		open('GET','http://foo.com/echo',0),
 		send(null),
 		ok(getAllResponseHeaders().match(
-			/^Content-Type: text\/plain\r?\n$/
-		), "getAllResponseHeaders"),
+			/^Content-Type: text\/plain\r?\n/
+		), "getAllResponseHeaders")||diag(getAllResponseHeaders()),
 		is(getResponseHeader('Content-Type'), 'text/plain',
 			'getResponsHeader');
 EOT8
@@ -709,17 +729,14 @@ EOT17
 use tests 19; # open’s idiosyncrasies
 {
 	my $what = 'method';
-	local *LWP::UserAgent::simple_request = sub {
-		my($lwp, $request) = @_;
-		$lwp->_request_sanity_check($request);
-		$request = $lwp->prepare_request($request);
+	no warnings 'redefine';
+	local *FakeProtocol::_create_response_object = sub {
+		my $request = shift;
 	
 		my $h = new HTTP::Headers;
 		header $h 'Content-Type', 'text/plain';
-		my $r = new HTTP::Response
-			200, "hokkhe", $h, $request->$what;
-		request $r $request;
-		$r
+		return (new HTTP::Response
+			200, "hokkhe", $h), $request->$what;
 	};
 
 	defined $js->eval(<<'	EOT17') or die;
@@ -804,18 +821,14 @@ EOT18a
 #----------------------------------------------------------------#
 use tests 1; # Base url determination
 {
-	local *LWP::UserAgent::simple_request = sub {
-		my($lwp, $request) = @_;
-		$lwp->_request_sanity_check($request);
-		$request = $lwp->prepare_request($request);
+	local *FakeProtocol::_create_response_object = sub {
+		my $request = shift;
 	
 		my $h = new HTTP::Headers;
 		header $h 'Content-Type', 'text/html';
 		header $h "Content-Base",'httP://foo.com/stuff/';
-		my $r = new HTTP::Response
-			200, "hokkhe", $h, "<title></title><p>";
-		request $r $request;
-		$r
+		return (new HTTP::Response
+			200, "hokkhe", $h), "<title></title><p>";
 	};
 	$m->get('http://foo.com/withbase');
 }
@@ -897,16 +910,12 @@ with(new XMLHttpRequest) {
 EOT21
 {
 	no warnings 'redefine';
-	local *LWP::UserAgent::simple_request = sub {
-		my($lwp, $request) = @_;
-		$lwp->_request_sanity_check($request);
-		$request = $lwp->prepare_request($request);
+	local *FakeProtocol::_create_response_object = sub {
+		my $request = shift;
 		is($request->content, '', 'head requests are bodiless');
 
 		my $h = new HTTP::Headers;
-		my $r = new HTTP::Response 200, 'Okey dokes', $h, '';
-		request $r $request;
-		$r
+		(new HTTP::Response 200, 'Okey dokes', $h), '';
 	};
 	defined $js->eval(<<'	EOT21a') or die;
 		with(new XMLHttpRequest) {
