@@ -1,9 +1,13 @@
-WWW::Mechanize::Plugin::Ajax, version 0.04 (alpha)
+WWW::Mechanize::Plugin::Ajax, version 0.05 (alpha)
 
 Plugin for WWW::Mechanize that provides the XMLHttpRequest object.
 
 
 RECENT CHANGES
+
+0.05
+----
+No new features; just updated to work with LWP 5.818
 
 0.04
 ----

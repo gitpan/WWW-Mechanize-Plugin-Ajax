@@ -14,7 +14,7 @@ use WWW::Mechanize::Plugin::JavaScript 0.003 ();
 
 use warnings; no warnings 'utf8';
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 sub init {
 	my($pack,$mech) = (shift,shift);
@@ -68,7 +68,7 @@ sub options {
 
 package WWW::Mechanize::Plugin::Ajax::XMLHttpRequest;
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 use Encode 2.09 'decode';
 use Scalar::Util 1.09 qw 'weaken blessed refaddr';
@@ -325,7 +325,8 @@ sub setRequestHeader {
 		(?:proxy|sec)-
 	)/xi;
 
-	push@{shift->[headers] ||= []}, shift, shift;
+	push@{shift->[headers] ||= []}, ''.shift, ''.shift;
+		# We have to stringify to avoid making LWP hiccough.
 }
 
 
@@ -433,7 +434,7 @@ package WWW::Mechanize::Plugin::Ajax::Cookies;
 require HTTP::Cookies;
 @ISA = HTTP::Cookies;
 
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 # We have to override this to make sure that add_cookie_header doesn’t
 # clobber any fake cookies.
@@ -474,7 +475,7 @@ WWW::Mechanize::Plugin::Ajax - WWW::Mechanize plugin that provides the XMLHttpRe
 
 =head1 VERSION
 
-Version 0.04 (alpha)
+Version 0.05 (alpha)
 
 =head1 SYNOPSIS
 

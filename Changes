@@ -1,5 +1,10 @@
 Revision history for WWW::Mechanize::Plugin::Ajax
 
+0.05    16 October, 2008
+        Fixed to work with  LWP  5.818,  which has a heart attack when
+        an HTTP header’s value is an object that happens indirectly to
+        reference a code reference.
+
 0.04    15 October, 2008
         No new features; simply updated to work with LWP 5.815
 
